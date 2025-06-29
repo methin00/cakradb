@@ -3,7 +3,23 @@ require_once 'php/config.php';
 require_once 'php/auth.php';
 checkLogin();
 
-// Firmaları veritabanından çekme
+if (isset($_POST['firma_sil'])) {
+    $firma_id = intval($_POST['firma_id']);
+
+    try {
+        $stmt = $db->prepare("UPDATE firmalar SET durum = 'pasif' WHERE id = ?");
+        $stmt->execute([$firma_id]);
+
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'success']);
+        exit();
+    } catch (PDOException $e) {
+        header('Content-Type: application/json');
+        echo json_encode(['status' => 'error', 'message' => $e->getMessage()]);
+        exit();
+    }
+}
+
 try {
     $stmt = $db->prepare("SELECT id, firma_adi FROM firmalar WHERE durum = 'aktif' ORDER BY firma_adi ASC");
     $stmt->execute();
@@ -12,27 +28,64 @@ try {
     die("Firmalar çekilirken hata: " . $e->getMessage());
 }
 
-// Form gönderildiğinde
-if($_SERVER['REQUEST_METHOD'] == 'POST') {
+if (isset($_POST['yeni_firma'])) {
+    $firma_adi = trim($_POST['firma_adi']);
+    $telefon = trim($_POST['telefon'] ?? null);
+
+    try {
+        $stmt = $db->prepare("SELECT COUNT(*) FROM firmalar WHERE firma_adi = ?");
+        $stmt->execute([$firma_adi]);
+        $sayac = $stmt->fetchColumn();
+
+        if ($sayac > 0) {
+            header('Content-Type: application/json');
+            echo json_encode([
+                'status' => 'error',
+                'message' => 'Bu firma adı zaten mevcut!'
+            ]);
+            exit();
+        }
+
+        $stmt = $db->prepare("INSERT INTO firmalar (firma_adi, telefon, durum) VALUES (?, ?, 'aktif')");
+        $stmt->execute([$firma_adi, $telefon]);
+
+        $yeni_firma_id = $db->lastInsertId();
+
+        header('Content-Type: application/json');
+        echo json_encode([
+            'status' => 'success',
+            'firma_id' => $yeni_firma_id,
+            'firma_adi' => $firma_adi
+        ]);
+        exit();
+    } catch(PDOException $e) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Firma eklenirken hata: ' . $e->getMessage()
+        ]);
+        exit();
+    }
+}
+
+if ($_SERVER['REQUEST_METHOD'] == 'POST' && !isset($_POST['yeni_firma']) && !isset($_POST['firma_sil'])) {
     $firma_id = intval($_POST['firma']);
     $toplam_parca = intval($_POST['toplamParca']);
     $teslim_tarihi = date('Y-m-d', strtotime($_POST['teslimTarihi']));
     $oncelik = $_POST['oncelik'];
-    $aciklama = $_POST['aciklama'];
-    
+    $aciklama = trim($_POST['aciklama']);
+
     try {
-        // İş kodu oluştur (Örnek: FIRMA-001)
         $stmt = $db->prepare("SELECT firma_adi FROM firmalar WHERE id = ?");
         $stmt->execute([$firma_id]);
         $firma = $stmt->fetch();
-        
+
         $firma_kodu = substr(strtoupper(str_replace(' ', '', $firma['firma_adi'])), 0, 5);
         $is_kodu = $firma_kodu . '-' . str_pad(mt_rand(1, 999), 3, '0', STR_PAD_LEFT);
-        
-        // Yeni iş ekleme
+
         $stmt = $db->prepare("INSERT INTO isler (is_kodu, firma_id, toplam_parca, teslim_tarihi, oncelik, aciklama) VALUES (?, ?, ?, ?, ?, ?)");
         $stmt->execute([$is_kodu, $firma_id, $toplam_parca, $teslim_tarihi, $oncelik, $aciklama]);
-        
+
         $_SESSION['success'] = "Yeni iş başarıyla eklendi! İş Kodu: " . $is_kodu;
         header("Location: admin-panel.php");
         exit();
@@ -41,16 +94,18 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
     }
 }
 ?>
+
 <!DOCTYPE html>
 <html lang="tr">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Yeni İş Ekle - ÇAKRA</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+  <link href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
   <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/tr.js"></script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css" />
   <style>
     body {
       background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -202,6 +257,36 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
       transform: translateY(-1px);
     }
     
+    .input-group .btn-success {
+      border-radius: 0 15px 15px 0;
+      padding: 18px 20px;
+      white-space: nowrap;
+    }
+    
+    .input-group .btn-success i {
+      margin-right: 5px;
+    }
+    
+    .modal-content {
+      border-radius: 20px;
+      overflow: hidden;
+    }
+    
+    .modal-header {
+      background: linear-gradient(135deg, #28a745, #20c997);
+      color: white;
+    }
+    
+    .modal-title {
+      font-weight: 600;
+    }
+    
+    .modal-footer .btn {
+      border-radius: 10px;
+      padding: 10px 20px;
+      font-weight: 500;
+    }
+    
     .btn-custom:disabled {
       background: #6c757d;
       transform: none;
@@ -332,387 +417,195 @@ if($_SERVER['REQUEST_METHOD'] == 'POST') {
 </head>
 <body>
 
-<nav class="navbar navbar-dark navbar-custom">
+<nav class="navbar navbar-dark bg-dark p-3">
   <div class="container-fluid">
-    <a class="navbar-brand" href="admin-panel.html">← Ana Sayfa | ÇAKRA</a>
+    <a class="navbar-brand" href="admin-panel.php">← Ana Sayfa | ÇAKRA</a>
   </div>
 </nav>
 
-<div class="main-container">
+<div class="container my-4 p-4 bg-white rounded shadow" style="max-width:700px;">
+
   <?php if(isset($error)): ?>
-    <div class="alert alert-danger"><?php echo $error; ?></div>
+    <div class="alert alert-danger"><?php echo htmlspecialchars($error); ?></div>
   <?php endif; ?>
 
-  <div class="header">
-    <h2>📝 Yeni İş Kaydı</h2>
-    <p>Sisteme yeni müşteri işi ekleyin</p>
-  </div>
-  
-  <div class="content">
-    <!-- İlerleme Göstergesi -->
-    <div class="step-indicator">
-      <div class="step active" id="step1">
-        <div class="step-number">1</div>
-        <div class="step-title">Firma Bilgileri</div>
-      </div>
-      <div class="step" id="step2">
-        <div class="step-number">2</div>
-        <div class="step-title">İş Detayları</div>
-      </div>
-      <div class="step" id="step3">
-        <div class="step-number">3</div>
-        <div class="step-title">Tarih & Notlar</div>
-      </div>
-    </div>
+  <h2 class="mb-4">📝 Yeni İş Kaydı</h2>
 
-    <div class="content">
-    <form id="jobForm" method="POST">
-      <!-- Firma Seçimi -->
-      <div class="form-group">
-        <label for="firma" class="form-label">🏢 Firma Adı</label>
-        <select class="form-control" id="firma" name="firma" required>
+  <form id="jobForm" method="POST" novalidate>
+    <div class="mb-3">
+      <label for="firma" class="form-label">🏢 Firma Adı</label>
+      <div class="input-group">
+        <select class="form-select" id="firma" name="firma" required>
           <option value="">Firma seçin...</option>
           <?php foreach($firmalar as $firma): ?>
-            <option value="<?php echo $firma['id']; ?>"><?php echo $firma['firma_adi']; ?></option>
+            <option value="<?= htmlspecialchars($firma['id']) ?>"><?= htmlspecialchars($firma['firma_adi']) ?></option>
           <?php endforeach; ?>
         </select>
+        <button type="button" class="btn btn-success" data-bs-toggle="modal" data-bs-target="#firmaEkleModal">
+          <i class="bi bi-plus-lg"></i> Yeni Ekle
+        </button>
+        <button type="button" class="btn btn-danger" id="firmaSilBtn" title="Seçili firmayı sil">
+          <i class="bi bi-trash"></i> Sil
+        </button>
       </div>
-
-      <!-- Toplam Parça Sayısı -->
-      <div class="form-group">
-        <label for="toplamParca" class="form-label">
-          📦 Toplam Parça Sayısı
-        </label>
-        <input type="number" class="form-control" id="toplamParca" min="1" max="10000" placeholder="Örnek: 250" required>
-        <div class="info-text">
-          💡 İşlenecek toplam parça adedi (1-10.000 arasında)
-        </div>
-      </div>
-
-      <!-- Son Teslim Tarihi -->
-      <div class="form-group">
-        <label for="teslimTarihi" class="form-label">
-          📅 Son Teslim Tarihi
-        </label>
-        <input type="text" class="form-control flatpickr-input" id="teslimTarihi" placeholder="Tarih seçmek için tıklayın" required readonly>
-        <div class="info-text">
-          💡 İşin tamamlanması gereken son tarih
-        </div>
-      </div>
-
-      <!-- Öncelik Seviyesi -->
-      <div class="form-group">
-        <label for="oncelik" class="form-label">
-          ⚡ Öncelik Seviyesi
-        </label>
-        <select class="form-select" id="oncelik" required>
-          <option value="">Öncelik seçin...</option>
-          <option value="normal">🟢 Normal</option>
-          <option value="yuksek">🟡 Yüksek</option>
-          <option value="acil">🔴 Acil</option>
-        </select>
-        <div class="info-text">
-          💡 İşin aciliyet durumunu belirleyin
-        </div>
-      </div>
-
-      <!-- İş Notu -->
-      <div class="form-group">
-        <label for="aciklama" class="form-label">
-          📝 İş Notu (Opsiyonel)
-        </label>
-        <textarea class="form-control" id="aciklama" rows="4" maxlength="500" placeholder="İşle ilgili özel notlarınızı buraya yazın..."></textarea>
-        <div class="char-counter">
-          <span id="charCount">0</span>/500 karakter
-        </div>
-        <div class="info-text">
-          💡 Kumaş türü, özel işlemler, dikkat edilecek hususlar
-        </div>
-      </div>
-
-      <!-- İlerleyiş Göstergesi -->
-      <div id="progressContainer" class="progress-container" style="display: none;">
-        <h6>📊 Form Tamamlanma Durumu</h6>
-        <div class="progress" style="height: 8px;">
-          <div class="progress-bar bg-success" id="formProgress" style="width: 0%"></div>
-        </div>
-        <small class="text-muted mt-2 d-block">
-          <span id="progressText">0%</span> tamamlandı
-        </small>
-      </div>
-
-      <!-- Kaydet Butonu -->
-      <button type="submit" class="btn btn-custom" id="submitBtn">
-        <span id="submitText">💾 İşi Sisteme Kaydet</span>
-        <div class="spinner-border spinner-border-sm loading-spinner" role="status">
-          <span class="visually-hidden">Kaydediliyor...</span>
-        </div>
-      </button>
-    </form>
-
-    <!-- Başarı Mesajı -->
-    <div id="successMessage" class="alert alert-success alert-custom" style="display: none;">
-      <h6>✅ Başarıyla Kaydedildi!</h6>
-      <p class="mb-0">Yeni iş sisteme eklendi ve takip listesine alındı.</p>
     </div>
 
-    <!-- Hata Mesajı -->
-    <div id="errorMessage" class="alert alert-danger alert-custom" style="display: none;">
-      <h6>❌ Hata Oluştu!</h6>
-      <p class="mb-0" id="errorText">Lütfen tüm zorunlu alanları doldurun.</p>
+    <div class="mb-3">
+      <label for="toplamParca" class="form-label">📦 Toplam Parça Sayısı</label>
+      <input type="number" class="form-control" id="toplamParca" name="toplamParca" min="1" max="10000" required placeholder="Örnek: 250" />
+    </div>
+
+    <div class="mb-3">
+      <label for="teslimTarihi" class="form-label">📅 Son Teslim Tarihi</label>
+      <input type="text" class="form-control" id="teslimTarihi" name="teslimTarihi" required placeholder="Tarih seçmek için tıklayın" readonly />
+    </div>
+
+    <div class="mb-3">
+      <label for="oncelik" class="form-label">⚡ Öncelik Seviyesi</label>
+      <select class="form-select" id="oncelik" name="oncelik" required>
+        <option value="">Öncelik seçin...</option>
+        <option value="normal">🟢 Normal</option>
+        <option value="yuksek">🟡 Yüksek</option>
+        <option value="acil">🔴 Acil</option>
+      </select>
+    </div>
+
+    <div class="mb-3">
+      <label for="aciklama" class="form-label">📝 İş Notu (Opsiyonel)</label>
+      <textarea class="form-control" id="aciklama" name="aciklama" rows="4" maxlength="500" placeholder="İşle ilgili özel notlarınızı buraya yazın..."></textarea>
+      <div class="text-end text-muted" style="font-size: 12px;"><span id="charCount">0</span>/500</div>
+    </div>
+
+    <button type="submit" class="btn btn-success w-100" id="submitBtn">
+      💾 İşi Sisteme Kaydet
+    </button>
+  </form>
+</div>
+
+<div class="modal fade" id="firmaEkleModal" tabindex="-1" aria-labelledby="firmaEkleModalLabel" aria-hidden="true">
+  <div class="modal-dialog">
+    <div class="modal-content rounded-3">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title" id="firmaEkleModalLabel">Yeni Firma Ekle</h5>
+        <button type="button" class="wierd
+        <div class="modal-body">
+          <div class="mb-3">
+            <label for="yeniFirmaAdi" class="form-label">Firma Adı *</label>
+            <input type="text" class="form-control" id="yeniFirmaAdi" required>
+          </div>
+          <div class="mb-3">
+            <label for="yeniFirmaTelefon" class="form-label">Telefon</label>
+            <input type="tel" class="form-control" id="yeniFirmaTelefon">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">İptal</button>
+          <button type="button" class="btn btn-success" id="firmaEkleKaydet">Kaydet</button>
+        </div>
+      </div>
     </div>
   </div>
 </div>
 
+<script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.11.8/dist/umd/popper.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/tr.js"></script>
+
 <script>
-// Flatpickr tarih seçici ayarları
-flatpickr("#teslimTarihi", {
-  dateFormat: "d.m.Y",
-  locale: "tr",
-  minDate: "today",
-  maxDate: new Date().fp_incr(365), // 1 yıl ileri
-  theme: "material_blue",
-  onReady: function(selectedDates, dateStr, instance) {
-    instance.calendarContainer.style.borderRadius = "15px";
-    instance.calendarContainer.style.boxShadow = "0 10px 30px rgba(0,0,0,0.2)";
-  },
-  onChange: function(selectedDates, dateStr, instance) {
-    updateSteps();
-    updateProgress();
-    validateInput(document.getElementById('teslimTarihi'), 1, 50);
-  }
-});
+document.addEventListener('DOMContentLoaded', function () {
+  const firmaEkleModal = new bootstrap.Modal(document.getElementById('firmaEkleModal'));
 
-// Karakter sayacı
-document.getElementById('aciklama').addEventListener('input', function() {
-  const count = this.value.length;
-  document.getElementById('charCount').textContent = count;
-  
-  if (count > 450) {
-    document.getElementById('charCount').style.color = '#dc3545';
-  } else {
-    document.getElementById('charCount').style.color = '#6c757d';
-  }
-});
-
-// Form ilerleme takibi
-function updateProgress() {
-  const fields = ['firma', 'toplamParca', 'teslimTarihi', 'oncelik'];
-  const filled = fields.filter(field => {
-    const element = document.getElementById(field);
-    return element.value.trim() !== '';
-  }).length;
-  
-  const percentage = Math.round((filled / fields.length) * 100);
-  
-  document.getElementById('formProgress').style.width = percentage + '%';
-  document.getElementById('progressText').textContent = percentage + '%';
-  
-  if (percentage > 0) {
-    document.getElementById('progressContainer').style.display = 'block';
-  }
-  
-  return percentage;
-}
-
-// Adım göstergesi güncelleme
-function updateSteps() {
-  const firma = document.getElementById('firma').value.trim();
-  const parcaCount = document.getElementById('toplamParca').value.trim();
-  const tarih = document.getElementById('teslimTarihi').value.trim();
-  
-  // Tüm adımları sıfırla
-  document.querySelectorAll('.step').forEach(step => {
-    step.classList.remove('active', 'completed');
+  flatpickr("#teslimTarihi", {
+    dateFormat: "d.m.Y",
+    locale: "tr",
+    minDate: "today"
   });
-  
-  // Step 1
-  if (firma) {
-    document.getElementById('step1').classList.add('completed');
-    document.getElementById('step2').classList.add('active');
-  } else {
-    document.getElementById('step1').classList.add('active');
-  }
-  
-  // Step 2
-  if (firma && parcaCount) {
-    document.getElementById('step2').classList.add('completed');
-    document.getElementById('step2').classList.remove('active');
-    document.getElementById('step3').classList.add('active');
-  }
-  
-  // Step 3
-  if (firma && parcaCount && tarih) {
-    document.getElementById('step3').classList.add('completed');
-  }
-}
 
-// Input validasyonu
-function validateInput(input, min, max, type = 'text') {
-  const value = input.value.trim();
-  
-  if (type === 'number') {
-    const num = parseInt(value);
-    if (value === '' || isNaN(num) || num < min || num > max) {
-      input.classList.add('is-invalid');
-      input.classList.remove('is-valid');
-      return false;
+  const aciklama = document.getElementById('aciklama');
+  const charCount = document.getElementById('charCount');
+  aciklama.addEventListener('input', () => {
+    charCount.textContent = aciklama.value.length;
+  });
+
+  document.getElementById('firmaEkleKaydet').addEventListener('click', function () {
+    const firmaAdi = document.getElementById('yeniFirmaAdi').value.trim();
+    const telefon = document.getElementById('yeniFirmaTelefon').value.trim();
+
+    if (!firmaAdi) {
+      alert('Firma adı zorunludur!');
+      return;
     }
-  } else {
-    if (value === '' || value.length < min || value.length > max) {
-      input.classList.add('is-invalid');
-      input.classList.remove('is-valid');
-      return false;
+
+    const formData = new URLSearchParams();
+    formData.append('yeni_firma', '1');
+    formData.append('firma_adi', firmaAdi);
+    formData.append('telefon', telefon);
+
+    fetch(window.location.href, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: formData.toString()
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'success') {
+        const select = document.getElementById('firma');
+        const option = document.createElement('option');
+        option.value = data.firma_id;
+        option.textContent = data.firma_adi;
+        select.appendChild(option);
+        select.value = data.firma_id;
+
+        firmaEkleModal.hide();
+        document.getElementById('yeniFirmaAdi').value = '';
+        document.getElementById('yeniFirmaTelefon').value = '';
+      } else {
+        alert(data.message || 'Firma eklenirken hata oluştu.');
+      }
+    })
+    .catch(err => alert('Bir hata oluştu: ' + err.message));
+  });
+
+  const firmaSilBtn = document.getElementById('firmaSilBtn');
+  const firmaSelect = document.getElementById('firma');
+
+  firmaSilBtn.addEventListener('click', function () {
+    const firmaId = firmaSelect.value;
+    const firmaAdi = firmaSelect.options[firmaSelect.selectedIndex]?.text || '';
+
+    if (!firmaId) {
+      alert('Lütfen önce silmek istediğiniz firmayı seçin.');
+      return;
     }
-  }
-  
-  input.classList.add('is-valid');
-  input.classList.remove('is-invalid');
-  return true;
-}
 
-// Form alanlarına event listener'lar ekleme
-document.getElementById('firma').addEventListener('input', function() {
-  validateInput(this, 2, 100);
-  updateSteps();
-  updateProgress();
-});
-
-document.getElementById('toplamParca').addEventListener('input', function() {
-  validateInput(this, 1, 10000, 'number');
-  updateSteps();
-  updateProgress();
-});
-
-document.getElementById('oncelik').addEventListener('change', function() {
-  if (this.value !== '') {
-    this.classList.add('is-valid');
-    this.classList.remove('is-invalid');
-  } else {
-    this.classList.add('is-invalid');
-    this.classList.remove('is-valid');
-  }
-  updateProgress();
-});
-
-// Form gönderimi
-document.getElementById('jobForm').addEventListener('submit', function(e) {
-  e.preventDefault();
-  
-  const submitBtn = document.getElementById('submitBtn');
-  const submitText = document.getElementById('submitText');
-  const loadingSpinner = document.querySelector('.loading-spinner');
-  const successMessage = document.getElementById('successMessage');
-  const errorMessage = document.getElementById('errorMessage');
-  
-  // Hata ve başarı mesajlarını gizle
-  successMessage.style.display = 'none';
-  errorMessage.style.display = 'none';
-  
-  // Form verilerini al
-  const formData = {
-    firma: document.getElementById('firma').value.trim(),
-    toplamParca: parseInt(document.getElementById('toplamParca').value),
-    teslimTarihi: document.getElementById('teslimTarihi').value.trim(),
-    oncelik: document.getElementById('oncelik').value,
-    aciklama: document.getElementById('aciklama').value.trim()
-  };
-  
-  // Validasyon kontrolleri
-  let isValid = true;
-  let errorMessages = [];
-  
-  if (!formData.firma || formData.firma.length < 2) {
-    isValid = false;
-    errorMessages.push('Firma adı en az 2 karakter olmalıdır');
-  }
-  
-  if (!formData.toplamParca || formData.toplamParca < 1 || formData.toplamParca > 10000) {
-    isValid = false;
-    errorMessages.push('Parça sayısı 1-10.000 arasında olmalıdır');
-  }
-  
-  if (!formData.teslimTarihi) {
-    isValid = false;
-    errorMessages.push('Teslim tarihi seçilmelidir');
-  }
-  
-  if (!formData.oncelik) {
-    isValid = false;
-    errorMessages.push('Öncelik seviyesi seçilmelidir');
-  }
-  
-  if (!isValid) {
-    document.getElementById('errorText').textContent = errorMessages.join(', ');
-    errorMessage.style.display = 'block';
-    return;
-  }
-  
-  // Yükleme durumunu göster
-  submitBtn.disabled = true;
-  submitText.textContent = 'Kaydediliyor...';
-  loadingSpinner.style.display = 'inline-block';
-  
-  // Simüle edilmiş kaydetme işlemi
-  setTimeout(() => {
-    // Başarılı kayıt simülasyonu
-    const jobId = 'JOB-' + Date.now().toString().substr(-6);
-    
-    console.log('Yeni iş kaydedildi:', {
-      id: jobId,
-      ...formData,
-      kayitTarihi: new Date().toLocaleString('tr-TR'),
-      durum: 'beklemede'
-    });
-    
-    // Başarı mesajını göster
-    successMessage.innerHTML = `
-      <h6>✅ Başarıyla Kaydedildi!</h6>
-      <p class="mb-2">İş ID: <strong>${jobId}</strong></p>
-      <p class="mb-0">Yeni iş sisteme eklendi ve takip listesine alındı.</p>
-    `;
-    successMessage.style.display = 'block';
-    
-    // Formu temizle
-    document.getElementById('jobForm').reset();
-    document.getElementById('charCount').textContent = '0';
-    document.getElementById('progressContainer').style.display = 'none';
-    
-    // Validasyon sınıflarını temizle
-    document.querySelectorAll('.is-valid, .is-invalid').forEach(el => {
-      el.classList.remove('is-valid', 'is-invalid');
-    });
-    
-    // Adım göstergesini sıfırla
-    document.querySelectorAll('.step').forEach(step => {
-      step.classList.remove('active', 'completed');
-    });
-    document.getElementById('step1').classList.add('active');
-    
-    // Butonu sıfırla
-    submitBtn.disabled = false;
-    submitText.textContent = '💾 İşi Sisteme Kaydet';
-    loadingSpinner.style.display = 'none';
-    
-    // Sayfayı yukarı kaydır
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-    
-  }, 2000); // 2 saniye bekleme simülasyonu
-});
-
-// Sayfa yüklendiğinde ilk durumu ayarla
-document.addEventListener('DOMContentLoaded', function() {
-  updateProgress();
-  updateSteps();
-});
-
-// Gerçek zamanlı validasyon feedback'i
-document.querySelectorAll('.form-control, .form-select').forEach(input => {
-  input.addEventListener('blur', function() {
-    if (this.hasAttribute('required') && this.value.trim() === '') {
-      this.classList.add('is-invalid');
-      this.classList.remove('is-valid');
+    if (!confirm(`"${firmaAdi}" firmasını silmek istediğinize emin misiniz?`)) {
+      return;
     }
+
+    const formData = new URLSearchParams();
+    formData.append('firma_sil', '1');
+    formData.append('firma_id', firmaId);
+
+    fetch(window.location.href, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: formData.toString()
+    })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'success') {
+        const optionToRemove = firmaSelect.querySelector(`option[value="${firmaId}"]`);
+        if (optionToRemove) optionToRemove.remove();
+
+        firmaSelect.value = '';
+
+        alert('Firma başarıyla silindi.');
+      } else {
+        alert(data.message || 'Firma silinirken hata oluştu.');
+      }
+    })
+    .catch(err => alert('Bir hata oluştu: ' + err.message));
   });
 });
 </script>
