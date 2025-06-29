@@ -1,8 +1,8 @@
 <?php
-define('DB_HOST', 'localhost'); // Veya Hostinger'in size özel verdiği sunucu adresi
-define('DB_USER', 'u307440943_admincakra'); // Veritabanı kullanıcı adı
-define('DB_PASS', 'Cakrautu123!'); // Kullanıcı şifresi (size verilen)
-define('DB_NAME', 'u307440943_cakra_db'); // Veritabanı adı
+define('DB_HOST', ''); 
+define('DB_USER', '');
+define('DB_PASS', ''); 
+define('DB_NAME', '');
 
 // PDO bağlantısı oluşturma
 try {
