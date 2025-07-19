@@ -40,4 +40,4 @@ Cakra Textile Workshop database management system developed based on PHP. This s
 
 ## 📬 VIEW ON GITHUB
 
-🔗 [GitHub Repository]([https://github.com/methin00](https://github.com/methin00/cakradb))  
+🔗 [GitHub Repository](https://github.com/methin00](https://github.com/methin00/cakradb)](https://github.com/methin00/cakradb)  
