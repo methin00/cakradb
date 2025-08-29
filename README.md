@@ -1,6 +1,7 @@
 # 📦 CakraDB
 
-Cakra Textile Workshop database management system developed based on PHP. This system is designed to facilitate the daily task tracking, reporting, and job status management of the workshop.
+Cakra Textile Workshop database management system developed based on PHP. I have designed this system to facilitate the daily task tracking, reporting, and job status management of the workshop and developed using AI models (GPT 4.1, Claude Sonnet 4).
+
 ---
 
 ## 🧰 USED TECHNOLOGIES
